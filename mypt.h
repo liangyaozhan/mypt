@@ -45,7 +45,7 @@
 
 #define MYPT_RESTART()				\
         do {						\
-            MYPT_INIT();				\
+            MYPT_INIT(__p_super_this);				\
             return MYPT_WAITING;			\
         } while(0)
 
