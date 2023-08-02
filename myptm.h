@@ -197,7 +197,7 @@ struct _myptm_loop
 typedef struct _myptm_loop myptm_loop;
 
 void myptm_loop_init(myptm_loop *p_this);
-int myptm_loop_run(myptm_loop *p_this);
+int myptm_loop_run(mypt_thread *p_thread);
 void myptm_loop_add(myptm_loop *p_this, mypt_thread *p_thread);
 
 struct _messagequeue

@@ -40,8 +40,10 @@ struct my_thread_a
     const char *name;
 };
 
-int my_thread_entry_a(struct my_thread_a *p_this)
+int my_thread_entry_a( mypt_thread *p )
 {
+    MYPT_DEF_THIS(p, struct my_thread_a, namea );
+
     MYPT_BEGIN(p_this->namea);
     printf("thread %s started\n", p_this->name);
     while (1)
@@ -83,8 +85,10 @@ struct my_thread_b
 
 
 
-int my_thread_entry_b(struct my_thread_b *p_this)
+int my_thread_entry_b( mypt_thread *p)
 {
+    MYPT_DEF_THIS(p, struct my_thread_b, nameb );
+
     MYPT_BEGIN(p_this->nameb);
     printf("thread %s started\n", p_this->name);
     my_thread_a_init(&p_this->a1, "b.a1");
@@ -150,6 +154,6 @@ int main(int argc, char **argv)
 
     while (1)
     {
-        myptm_loop_run( &loop );
+        myptm_loop_run( &loop.thread );
     }
 }

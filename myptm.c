@@ -14,8 +14,10 @@ void myptm_loop_init(myptm_loop *p_this)
     p_this->running = NULL;
 }
 
-int myptm_loop_run(myptm_loop *p_this)
+int myptm_loop_run(mypt_thread *p)
 {
+    MYPT_DEF_THIS(p, myptm_loop, thread);
+    
     MYPT_BEGIN(p_this->thread)
 
     while (1)
