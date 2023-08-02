@@ -3,6 +3,12 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define FTK_END_DECLS }
+
 #define MYPT_WAITING 0
 #define MYPT_YIELDED 1
 #define MYPT_EXITED  2
@@ -70,16 +76,11 @@
             }						\
         } while(0)
 
-#endif /* MYPT_H_ */
 
 
-#define MYPT_DELAY_MS(ms)	        \
+#define MYPT_DELAY_MS(ms)	        do{\
         __p_super_this->tick = mypt_thread_sys_tick_get_ms()+(ms);\
-        MYPT_WAIT_UNTIL(mypt_thread_sys_tick_get_ms()>=__p_super_this->tick)
-
-#define MYPT_DELAY_US(us)	        \
-        __p_super_this->tick = mypt_thread_sys_tick_get_us()+(us);\
-        MYPT_WAIT_UNTIL(mypt_thread_sys_tick_get_us()>=__p_super_this->tick)
+        MYPT_WAIT_UNTIL(mypt_thread_sys_tick_get_ms() - __p_super_this->tick > 0);}while (0)
 
 typedef struct _mypt_thread
 {
@@ -89,7 +90,14 @@ typedef struct _mypt_thread
 
 #define MYPT_OBJECT(obj) mypt_thread obj
 
+
 /* you should define this function before using MYPT_DELAY */
 int32_t mypt_thread_sys_tick_get_ms();
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* MYPT_H_ */
 
 /** @} */
