@@ -3,11 +3,12 @@
 
 #include <stdio.h>
 #include <limits.h>
-#include "myptm.h"
+#include "myptm/myptm.h"
+#include "myptm/myptm_message_queue.h"
 
 #include <Windows.h>
 
-int64_t _mypt_thread_sys_tick_get_ms()
+int64_t _myptm_thread_sys_tick_get_ms()
 {
     LARGE_INTEGER SystemFrequency, StartTime;
     double ms;
@@ -19,9 +20,10 @@ int64_t _mypt_thread_sys_tick_get_ms()
 
 int64_t g_ms_base;
 int32_t g_ms_offset = 0;
-int32_t mypt_thread_sys_tick_get_ms()
+int32_t myptm_thread_sys_tick_get_ms()
 {
-    return (int32_t)(_mypt_thread_sys_tick_get_ms() - g_ms_base) + g_ms_offset;
+    int32_t xx = (int32_t)(_myptm_thread_sys_tick_get_ms() - g_ms_base) + g_ms_offset;
+    return xx;
 }
 
 struct _msg
@@ -35,45 +37,41 @@ message_queue_def( g_the_msg, 1024 );
 
 struct my_thread_a
 {
-    MYPT_OBJECT(namea);
+    myptm_OBJECT(thread);
     int n;
     const char *name;
 };
 
-int my_thread_entry_a( mypt_thread *p )
+int my_thread_entry_a( myptm_thread_t *p )
 {
-    MYPT_DEF_THIS(p, struct my_thread_a, namea );
+    printf("entering my_thread_entry_a p=%p\n", p);
+    myptm_DEF_THIS(p, struct my_thread_a, thread );
 
-    MYPT_BEGIN(p_this->namea);
+    myptm_BEGIN(p_this->thread);
     printf("thread %s started\n", p_this->name);
     while (1)
     {
         msg_t msg;
         int tx_size;
-        printf(" *** thread %s delay1 1000ms n=%d tick=%d\n", p_this->name, p_this->n++, mypt_thread_sys_tick_get_ms() );
-        MYPT_DELAY_MS(1000);
         msg.from_thread = p_this->name;
         msg.value = p_this->n;
         message_queue_send( message_queue_ptr(g_the_msg), &msg, sizeof(msg), tx_size);
         printf("-- thread %s txsize=%d\n", p_this->name, tx_size );
-        MYPT_DELAY_MS(100);
-        //printf("thread %s delay2 1000ms\n", p_this->name);
-        //MYPT_DELAY_MS(1000);
-        //printf("    -> thread %s delay2 1000ms done\n\n", p_this->name);
+        myptm_thread_delay((1+rand()%3) * 1000 );
     }
-    MYPT_END();
+    myptm_END();
 }
 
 void my_thread_a_init(struct my_thread_a *p_this, const char *name)
 {
-    mypt_thread_init(&p_this->namea, my_thread_entry_a);
+    myptm_thread_init(&p_this->thread, my_thread_entry_a);
     p_this->name = name;
     p_this->n = 0;
 }
 
 struct my_thread_b
 {
-    MYPT_OBJECT(nameb);
+    myptm_OBJECT(thread);
     int n;
     const char *name;
     struct my_thread_a a1, a2;
@@ -85,41 +83,49 @@ struct my_thread_b
 
 
 
-int my_thread_entry_b( mypt_thread *p)
+int my_thread_entry_b( myptm_thread_t *p)
 {
-    MYPT_DEF_THIS(p, struct my_thread_b, nameb );
+    myptm_DEF_THIS(p, struct my_thread_b, thread );
 
-    MYPT_BEGIN(p_this->nameb);
+    myptm_BEGIN(p_this->thread);
     printf("thread %s started\n", p_this->name);
     my_thread_a_init(&p_this->a1, "b.a1");
     my_thread_a_init(&p_this->a2, "b.a2");
-    myptm_loop_add( p_this->nameb.p_owner, &p_this->a1.namea);
-    myptm_loop_add( p_this->nameb.p_owner, &p_this->a2.namea);
+    myptm_loop_add( p_this->thread.p_owner, &p_this->a1.thread);
+    myptm_loop_add( p_this->thread.p_owner, &p_this->a2.thread);
+    myptm_thread_startup( &p_this->a1.thread);
+    myptm_thread_startup( &p_this->a2.thread);
     while (1)
     {
         for (p_this->i = 0; p_this->i < 10; p_this->i++)
         {
             printf("thread %s delay 500ms for-loop %d\n", p_this->name, p_this->i);
-            MYPT_DELAY_MS(50);
+            myptm_thread_delay(50);
         }
-        printf("thread %s delay 5000ms done %d\n\n", p_this->name, p_this->n++);
-        MYPT_DELAY_MS(5000);
-        printf("thread %s exit n=%d\n\n", p_this->name, p_this->n++);
+        myptm_thread_delay(5000);
+        printf("######## thread %s exit n=%d\n\n", p_this->name, p_this->n++);
         while (1){
             int rx_size;
             msg_t msg;
-            message_queue_recv( message_queue_ptr(g_the_msg), &msg, sizeof(msg), rx_size );
+            message_queue_recv( message_queue_ptr(g_the_msg), &msg, sizeof(msg), rx_size, -1 );
+            printf("#########  rx_size=%d\n", rx_size );
             if (rx_size == sizeof(msg)){
-                printf("    *** msg recv from thread %s value=%d\n", msg.from_thread, msg.value );
+                printf(" ########    message queue  msg recv from thread %s value=%d\n", msg.from_thread, msg.value );
+            }
+            p_this->n++;
+            if (p_this->n == 10){
+                myptm_thread_stop( &p_this->a1.thread );
+            } else if (p_this->n == 20){
+                myptm_thread_stop( &p_this->a2.thread );
             }
         }
     }
-    MYPT_END();
+    myptm_END();
 }
 
 void my_thread_b_init(struct my_thread_b *p_this, const char *name)
 {
-    mypt_thread_init(&p_this->nameb, my_thread_entry_b);
+    myptm_thread_init(&p_this->thread, my_thread_entry_b);
     p_this->n = 0;
     p_this->name = name;
     sprintf(p_this->name_a1, "%s's a1", name);
@@ -133,7 +139,7 @@ void my_thread_b_init(struct my_thread_b *p_this, const char *name)
 
 int main(int argc, char **argv)
 {
-    myptm_loop loop;
+    myptm_loop_t loop;
 
     struct my_thread_a a1, a2;
     struct my_thread_b b1;
@@ -141,19 +147,29 @@ int main(int argc, char **argv)
     message_queue_init_internal_pool( message_queue_ptr(g_the_msg), sizeof(msg_t), g_the_msg );
     //message_queue_init_internal_pool( &(g_the_msg), sizeof(msg_t), g_the_msg );
 
-    g_ms_base = _mypt_thread_sys_tick_get_ms();
+    g_ms_base = _myptm_thread_sys_tick_get_ms();
 
     my_thread_a_init(&a1, "a1");
     my_thread_a_init(&a2, "a2");
     my_thread_b_init(&b1, "b1");
 
     myptm_loop_init( &loop );
-    myptm_loop_add( &loop, &a1.namea );
-    myptm_loop_add( &loop, &a2.namea );
-    myptm_loop_add( &loop, &b1.nameb );
+    myptm_loop_add( &loop, &a1.thread );
+    myptm_loop_add( &loop, &a2.thread );
+    myptm_loop_add( &loop, &b1.thread );
+
+    myptm_thread_startup( &a1.thread );
+    myptm_thread_startup( &a2.thread );
+    myptm_thread_startup( &b1.thread );
 
     while (1)
     {
+        int delay;
         myptm_loop_run( &loop.thread );
+        delay = myptm_loop_next_tick( &loop );
+        if (delay){
+            printf(" ------------ sleep %dms ------------------\n", delay);
+            Sleep(delay);
+        }
     }
 }
