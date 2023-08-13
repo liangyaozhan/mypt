@@ -137,9 +137,17 @@ void my_thread_b_init(struct my_thread_b *p_this, const char *name)
     //message_queue_init_internal_pool( p_this, sizeof(msg_t), msgq );
 }
 
+static void __stop_everything( void *arg)
+{
+    myptm_loop_t *p_loop = (myptm_loop_t *)arg;
+    printf("stop all\n");
+    myptm_loop_destroy( p_loop );
+}
+
 int main(int argc, char **argv)
 {
     myptm_loop_t loop;
+    myptm_timer_t timer;
 
     struct my_thread_a a1, a2;
     struct my_thread_b b1;
@@ -162,13 +170,20 @@ int main(int argc, char **argv)
     myptm_thread_startup( &a2.thread );
     myptm_thread_startup( &b1.thread );
 
+    myptm_timer_init( &timer, __stop_everything, &loop );
+
+    myptm_loop_timer_start( &loop, &timer, 15000 );
+
     while (1)
     {
         int delay;
-        myptm_loop_run( &loop.thread );
+        int code = myptm_loop_run( &loop.thread );
         delay = myptm_loop_next_tick( &loop );
         if (delay){
             printf(" ------------ sleep %dms ------------------\n", delay);
+            if (delay == -1){
+                break;
+            }
             Sleep(delay);
         }
     }

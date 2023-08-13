@@ -40,27 +40,30 @@ extern "C"
 #endif
 
 typedef struct myptm_timer_s myptm_timer_t;
+struct myptm_tick_s;
+typedef struct myptm_tick_s myptm_tick_t;
 
 struct myptm_timer_s
 {
 /* private: */
     myptm_queue_t       node;
+    unsigned int      tick_origin;
     unsigned int      tick;
+    myptm_tick_t     *p_ticker;
 
 /* public: */
-    void (*timeout_callback)( void *); /*!< timeout callback function */
+    void (*timeout_callback)( myptm_timer_t *p_this, void *arg); /*!< timeout callback function */
     void             *arg;
 };
 
-void myptm_timer_init( myptm_timer_t *p_this, void (*cb)(void*), void *arg);
+void myptm_timer_init( myptm_timer_t *p_this, void (*cb)(myptm_timer_t *p_this, void*arg), void *arg);
 void myptm_timer_destroy( myptm_timer_t *p_this );
+void myptm_timer_restart(  myptm_timer_t *p_timer );
 
-typedef struct myptm_tick_s myptm_tick_t;
 struct myptm_tick_s
 {
     myptm_queue_t head;
 };
-
 
 void myptm_tick_init(  myptm_tick_t *p_this);
 void myptm_tick_increase(  myptm_tick_t *p_this, unsigned int tick );

@@ -32,6 +32,8 @@
 #ifndef myptm_QUEUE_H
 #define myptm_QUEUE_H
 
+#include <assert.h>
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -46,33 +48,34 @@ extern "C"
     };
 
 #define myptm_queue_init(q) \
-    do                     \
-    {                      \
-        (q)->prev = q;     \
-        (q)->next = q;     \
+    do                      \
+    {                       \
+        (q)->prev = q;      \
+        (q)->next = q;      \
     } while (0)
 
 #define myptm_queue_empty(h) \
     (h == (h)->prev)
 
 #define myptm_queue_insert_head(h, x) \
-    do                               \
-    {                                \
-        (x)->next = (h)->next;       \
-        (x)->next->prev = x;         \
-        (x)->prev = h;               \
-        (h)->next = x;               \
+    do                                \
+    {                                 \
+        (x)->next = (h)->next;        \
+        (x)->next->prev = x;          \
+        (x)->prev = h;                \
+        (h)->next = x;                \
     } while (0)
 
 #define myptm_queue_insert_after myptm_queue_insert_head
 
-#define myptm_queue_insert_tail(h, x) \
-    do                               \
-    {                                \
-        (x)->prev = (h)->prev;       \
-        (x)->prev->next = x;         \
-        (x)->next = h;               \
-        (h)->prev = x;               \
+#define myptm_queue_insert_tail(h, x)                                                     \
+    do                                                                                    \
+    {                                                                                     \
+        assert((x)->next == (x)->prev && (x)->next == (x) && "insert twice or not init"); \
+        (x)->prev = (h)->prev;                                                            \
+        (x)->prev->next = x;                                                              \
+        (x)->next = h;                                                                    \
+        (h)->prev = x;                                                                    \
     } while (0)
 
 #define myptm_queue_head(h) \
@@ -87,14 +90,15 @@ extern "C"
 #define myptm_queue_prev(q) \
     (q)->prev
 
-#define myptm_queue_remove(x)         \
-    do                               \
-    {                                \
-        (x)->next->prev = (x)->prev; \
-        (x)->prev->next = (x)->next; \
-        myptm_queue_init(x);          \
+#define myptm_queue_remove(x)              \
+    do                                     \
+    {                                      \
+        myptm_queue_t *p_prev = (x)->prev; \
+        myptm_queue_t *p_next = (x)->next; \
+        p_next->prev = p_prev;             \
+        p_prev->next = p_next;             \
+        myptm_queue_init(x);               \
     } while (0)
-
 
 /**
  * origin:      h ==A=== q  ====B=== h
@@ -102,20 +106,25 @@ extern "C"
  * after list 2:      n q==B=== n
  */
 #define myptm_queue_split(h, q, n) \
-    (n)->prev = (h)->prev;        \
-    (n)->prev->next = n;          \
-    (n)->next = q;                \
-    (h)->prev = (q)->prev;        \
-    (h)->prev->next = h;          \
+    (n)->prev = (h)->prev;         \
+    (n)->prev->next = n;           \
+    (n)->next = q;                 \
+    (h)->prev = (q)->prev;         \
+    (h)->prev->next = h;           \
     (q)->prev = n;
 
-#define myptm_queue_add(h, n)     \
+#define myptm_queue_add(h, n)    \
     (h)->prev->next = (n)->next; \
     (n)->next->prev = (h)->prev; \
     (h)->prev = (n)->prev;       \
     (h)->prev->next = h;
 
-#define myptm_queue_move(h,_new) do{ myptm_queue_insert_tail(h,_new);myptm_queue_remove(h);}while (0)
+#define myptm_queue_move(h, _new)         \
+    do                                    \
+    {                                     \
+        myptm_queue_insert_tail(h, _new); \
+        myptm_queue_remove(h);            \
+    } while (0)
 
 #ifndef myptm_container_of
 #define myptm_container_of(p, t, m) \
@@ -124,18 +133,16 @@ extern "C"
 
 #define myptm_queue_container(q, type, m) myptm_container_of((q), type, m)
 
-#define myptm_queue_for_each_container(pos, head, t, member)			\
-	for (pos = myptm_queue_container((head)->next, t, member);	\
-	     &pos->member != (head); 					\
-	     pos = myptm_queue_container(pos->member.next, t, member))
+#define myptm_queue_for_each_container(pos, head, t, member)   \
+    for (pos = myptm_queue_container((head)->next, t, member); \
+         &pos->member != (head);                               \
+         pos = myptm_queue_container(pos->member.next, t, member))
 
-#define myptm_queue_for_each_container_safe(pos, n, head, t, member)			\
-	for (pos = myptm_queue_container((head)->next, t, member),	\
-		n = myptm_queue_container(pos->member.next, t, member);	\
-	     &pos->member != (head); 					\
-	     pos = n, n = myptm_queue_container(n->member.next, t, member))
-
-
+#define myptm_queue_for_each_container_safe(pos, n, head, t, member) \
+    for (pos = myptm_queue_container((head)->next, t, member),       \
+        n = myptm_queue_container(pos->member.next, t, member);      \
+         &pos->member != (head);                                     \
+         pos = n, n = myptm_queue_container(n->member.next, t, member))
 
 #ifdef __cplusplus
 }

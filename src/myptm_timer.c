@@ -32,18 +32,27 @@
 #include "myptm/myptm_timer.h"
 
 
-void myptm_timer_init( myptm_timer_t *p_this, void (*cb)(void*), void *arg)
+void myptm_timer_init( myptm_timer_t *p_this, void (*cb)(myptm_timer_t *p_this, void*arg), void *arg)
 {
     myptm_queue_init( &p_this->node );
     p_this->timeout_callback = cb;
     p_this->arg = arg;
     p_this->tick = 0;
+    p_this->p_ticker = NULL;
 }
 void myptm_timer_destroy( myptm_timer_t *p_this )
 {
     myptm_queue_remove( &p_this->node );
     p_this->timeout_callback = 0;
 }
+void myptm_timer_restart( myptm_timer_t *p_timer )
+{
+    myptm_tick_t *p_tick = p_timer->p_ticker;
+    if (!p_tick)return ;
+    myptm_tick_remove_timer( p_tick, p_timer );
+    myptm_tick_add_timer(  p_tick, p_timer, p_timer->tick_origin );
+}
+
 
 void myptm_tick_init(  myptm_tick_t *p_tick)
 {
@@ -70,7 +79,7 @@ void myptm_tick_increase(  myptm_tick_t *p_tick, unsigned int tick )
             if (pt->tick == 0){
                 myptm_queue_remove( &pt->node );
                 if (pt->timeout_callback){
-                    pt->timeout_callback(pt->arg);
+                    pt->timeout_callback(pt, pt->arg);
                 }
             }else{
                 break;
@@ -89,6 +98,8 @@ void myptm_tick_destroy(  myptm_tick_t *p_this)
 void myptm_tick_add_timer(  myptm_tick_t *p_tick, myptm_timer_t *p_timer, int tick)
 {
     myptm_timer_t *iter;
+    p_timer->tick_origin = tick;
+    p_timer->p_ticker = p_tick;
     myptm_queue_for_each_container(iter, &p_tick->head, myptm_timer_t, node){
         if (tick > iter->tick){
             tick -= iter->tick;

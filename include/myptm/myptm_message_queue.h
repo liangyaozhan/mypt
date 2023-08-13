@@ -86,22 +86,23 @@ extern "C"
 
 #define message_queue_init_this(obj, msg_size) message_queue_init_internal_pool(message_queue_ptr(p_this->obj), msg_size, obj)
 
-#define message_queue_send(p_mq, buffer, size, timeout )                                            \
+#define message_queue_send(p_mq, buffer, size, timeout)                                                        \
     do                                                                                                         \
     {                                                                                                          \
         extern int incompatible_pointor_type_check_array[(sizeof(*(p_mq)) == sizeof(message_queue)) ? 1 : -1]; \
         myptm_sem_take(&p_mq->sem_empty_buffer, timeout);                                                      \
-        if (__p_super_this->err == myptm_EOK)                                                                   \
+        if (__p_super_this->err == myptm_EOK)                                                                  \
             _message_queue_send((p_mq), (buffer), (size));                                                     \
     } while (0)
 
-#define message_queue_recv(p_mq, buffer, size, rxsize, timeout )                                                     \
+#define message_queue_recv(p_mq, buffer, size, rxsize, timeout)                                                \
     do                                                                                                         \
     {                                                                                                          \
         extern int incompatible_pointor_type_check_array[(sizeof(*(p_mq)) == sizeof(message_queue)) ? 1 : -1]; \
         myptm_sem_take(&p_mq->sem_read, timeout);                                                              \
-        if (__p_super_this->err == myptm_EOK)                                                                   \
-            rxsize = _message_queue_recv((p_mq), (buffer), (size));                    \
+        rxsize = 0;                                                                                            \
+        if (__p_super_this->err == myptm_EOK)                                                                  \
+            rxsize = _message_queue_recv((p_mq), (buffer), (size));                                            \
     } while (0)
 
 #ifdef __cplusplus

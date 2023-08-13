@@ -43,7 +43,7 @@ static void myptm_loop_make_ready(myptm_loop_t *p_this, myptm_thread_t *p_thread
 
 void myptm_loop_thread_delay(myptm_loop_t *p_this, myptm_thread_t *p_thread, int tick);
 
-static void myptm_timeout_cb__(void *arg){
+static void myptm_timeout_cb__(myptm_timer_t *p_timer, void *arg){
     myptm_thread_t *p_thread = (myptm_thread_t*)arg;
     myptm_thread_make_ready( p_thread );
     p_thread->err = myptm_ETIMEOUT;
@@ -83,19 +83,18 @@ void myptm_thread_join(myptm_thread_t *p_thread)
     if (p_thread->state == myptm_STATE_DEAD){
         assert(!p_thread->p_owner);
     }
-    while (p_thread->state != myptm_STATE_DEAD){
-        myptm_loop_run( &p_thread->p_owner->thread );
+    while (p_thread->state != myptm_STATE_DEAD && myptm_loop_poll( p_thread->p_owner ) != -1){
     }
 }
 
 void myptm_loop_init(myptm_loop_t *p_this)
 {
-    myptm_thread_init(&p_this->thread, myptm_loop_run);
     myptm_queue_init(&p_this->head_state_pending);
     myptm_queue_init(&p_this->head_state_running);
     myptm_queue_init(&p_this->clip);
     myptm_tick_init( &p_this->ticker);
     p_this->systick = myptm_thread_sys_tick_get_ms();
+    p_this->p_thread_current = NULL;
 }
 
 static void __myptm_queue_item_destroy_thread( myptm_queue_t *ptr )
@@ -111,15 +110,15 @@ void myptm_loop_destroy(myptm_loop_t *p_this)
     __myptm_queue_item_destroy_thread( &p_this->clip );
     __myptm_queue_item_destroy_thread( &p_this->head_state_pending );
     __myptm_queue_item_destroy_thread( &p_this->head_state_running );
+    myptm_tick_destroy( &p_this->ticker );
 }
 
-int myptm_loop_run(myptm_thread_t *p)
+int myptm_loop_poll( myptm_loop_t *p_this )
 {
     myptm_thread_t *ptr_thread;
+    myptm_thread_t *ptr_thread_old;
     int32_t now = myptm_thread_sys_tick_get_ms();
     int diff;
-
-    myptm_DEF_THIS(p, myptm_loop_t, thread);
 
     if (myptm_queue_empty(&p_this->clip)){
         myptm_queue_move( &p_this->head_state_running, &p_this->clip);
@@ -130,6 +129,7 @@ int myptm_loop_run(myptm_thread_t *p)
         p_this->systick = now;
         myptm_tick_increase( &p_this->ticker, diff );
     }
+    ptr_thread_old = p_this->p_thread_current;
 
     while ( !myptm_queue_empty(&p_this->clip)){
         myptm_queue_t *ptr = p_this->clip.next;
@@ -138,6 +138,7 @@ int myptm_loop_run(myptm_thread_t *p)
         ptr_thread = myptm_queue_container(ptr, myptm_thread_t, node_state );
         if (ptr_thread->entry && ptr_thread->ref == 0 ){
             ptr_thread->ref++;
+            p_this->p_thread_current = ptr_thread;
             int code = ptr_thread->entry(ptr_thread);
             ptr_thread->ref--;
             if (code == myptm_ENDED){
@@ -145,15 +146,19 @@ int myptm_loop_run(myptm_thread_t *p)
             }
         }
     }
-    return myptm_WAITING;
-}
+    p_this->p_thread_current = ptr_thread_old;
 
-int myptm_loop_next_tick(myptm_loop_t *p_this)
-{
-    if ((!myptm_queue_empty( &p_this->clip )) || (!myptm_queue_empty( &p_this->head_state_running ))){
-        return 0;
+    myptm_queue_for_each_container( ptr_thread, &p_this->head_state_running, myptm_thread_t, node_state ){
+        if (ptr_thread->ref == 0 && ptr_thread->state == myptm_STATE_READY){
+            return 0;
+        }
     }
     return myptm_tick_next( &p_this->ticker );
+}
+
+int myptm_loop_empty( myptm_loop_t *p_this )
+{
+    return myptm_queue_empty( &p_this->ticker.head ) && myptm_queue_empty( &p_this->head_state_pending ) && myptm_queue_empty( &p_this->head_state_running ) && myptm_queue_empty(&p_this->clip);
 }
 
 void myptm_loop_add(myptm_loop_t *p_this, myptm_thread_t *p_thread)
@@ -186,7 +191,7 @@ void myptm_thread_suspend(myptm_thread_t *p_this)
     myptm_queue_remove( &p_this->node_state );
     myptm_queue_insert_tail( &p_loop->head_state_pending, &p_this->node_state );
     p_this->state = myptm_STATE_PENDING;
-    p_this->err = 0;
+    p_this->err = myptm_EOK;
 }
 
 void myptm_thread_prepare_delay(myptm_thread_t *p_this, int tick)
@@ -201,7 +206,11 @@ void myptm_thread_prepare_delay(myptm_thread_t *p_this, int tick)
 }
 void myptm_loop_make_ready(myptm_loop_t *p_this, myptm_thread_t *p_thread)
 {
+    if (!p_this){
+        return ;
+    }
     myptm_queue_remove( &p_thread->node_state );
+    myptm_queue_remove( &p_thread->node_pending_resource );
     myptm_queue_insert_tail( &p_this->head_state_running, &p_thread->node_state );
     p_thread->state = myptm_STATE_READY;
 }
@@ -240,7 +249,7 @@ void myptm_thread_resume( myptm_thread_t *p_thread, int code)
     myptm_queue_remove( &p_thread->node_pending_resource );
     myptm_tick_remove_timer( &p_thread->p_owner->ticker, &p_thread->timer );
     myptm_thread_make_ready( p_thread );
-    p_thread->err = code;
+    p_thread->err = (myptm_err_t)code;
 }
 
 void myptm_sem_give( myptm_sem_t *p_this, int count )
@@ -254,7 +263,15 @@ void myptm_sem_give( myptm_sem_t *p_this, int count )
     p_this->count += count - i;
 }
 
-void myptm_sem_destroy( myptm_sem_t *p_this, int init_count )
+void myptm_sem_give_all( myptm_sem_t *p_this )
+{
+    for (; !myptm_queue_empty(&p_this->head_pendings); ){
+        myptm_thread_t *p_thread = myptm_queue_container( p_this->head_pendings.next, myptm_thread_t, node_pending_resource );
+        myptm_thread_resume( p_thread, myptm_EOK );
+    }
+}
+
+void myptm_sem_destroy( myptm_sem_t *p_this )
 {
     while ( !myptm_queue_empty(&p_this->head_pendings) ){
         myptm_thread_t *p_thread = myptm_queue_container( p_this->head_pendings.next, myptm_thread_t, node_pending_resource );

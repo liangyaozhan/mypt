@@ -37,6 +37,9 @@
 #include "myptm/myptm_queue.h"
 #include "myptm/myptm_timer.h"
 
+#define incompatible_pointor_type_check(ptr, t) \
+    extern int incompatible_pointor_type_check_array[(sizeof(*(ptr)) == sizeof(t)) ? 1 : -1];
+
 #define MYPTM_CPLUSPLUS_BEGIN \
     extern "C"                \
     {
@@ -89,7 +92,7 @@ typedef struct _mypt_thread
 
 struct _myptm_loop
 {
-    myptm_thread_t thread;
+    myptm_thread_t *p_thread_current;
     myptm_queue_t head_state_pending;
     myptm_queue_t head_state_running;
     myptm_queue_t clip;
@@ -104,10 +107,6 @@ struct _mypt_sem
 };
 typedef struct _mypt_sem myptm_sem_t;
 
-/*
- 绕过这个BUG:
-    msvc中, __LINE__非常量
-*/
 #define _DBJ_CONCATENATE_(a, b) a##b
 #define _DBJ_CONCATENATE(a, b) _DBJ_CONCATENATE_(a, b)
 #define CONSTEXPR_LINE _DBJ_CONCATENATE(__LINE__, U)
@@ -152,11 +151,11 @@ typedef struct _mypt_sem myptm_sem_t;
 
 #define myptm_WAIT_WHILE(cond) myptm_WAIT_UNTIL(!(cond))
 
-#define myptm_RESTART()             \
-    do                              \
-    {                               \
+#define myptm_RESTART()           \
+    do                            \
+    {                             \
         (__p_super_this)->lc = 0; \
-        return myptm_WAITING;       \
+        return myptm_WAITING;     \
     } while (0)
 
 #define myptm_EXIT() goto __crt_label_end;
@@ -176,16 +175,28 @@ typedef struct _mypt_sem myptm_sem_t;
 
 #define myptm_error_code() (__p_super_this->err)
 
-#define myptm_sem_take(p_sem, timeout)                                                                        \
+#define myptm_sem_take(p_sem, timeout)                                                                            \
+    do                                                                                                            \
+    {                                                                                                             \
+        myptm_YIELD_FLAG = 0;                                                                                     \
+        myptm_LC_SET((__p_super_this)->lc);                                                                       \
+        if (myptm_YIELD_FLAG == 0)                                                                                \
+        {                                                                                                         \
+            myptm_sem_t *__ptr = (p_sem);                                                                         \
+            extern int incompatible_pointor_type_check_array[(sizeof(*(p_sem)) == sizeof(myptm_sem_t)) ? 1 : -1]; \
+            myptm_err_t _local_err_pt = myptm_sem_prepare_take(__ptr, timeout, __p_super_this);                   \
+            if (_local_err_pt == myptm_EEMPTY)                                                                    \
+            {                                                                                                     \
+                return myptm_YIELDED;                                                                             \
+            }                                                                                                     \
+        }                                                                                                         \
+    } while (0)
+#define myptm_sem_reset(p_sem)                                                                                \
     do                                                                                                        \
     {                                                                                                         \
-        myptm_sem_t *__ptr = (p_sem);                                                                         \
         extern int incompatible_pointor_type_check_array[(sizeof(*(p_sem)) == sizeof(myptm_sem_t)) ? 1 : -1]; \
-        myptm_err_t _local_err_pt = myptm_sem_prepare_take(__ptr, timeout, __p_super_this);                   \
-        if (_local_err_pt == myptm_EEMPTY)                                                                    \
-        {                                                                                                     \
-            myptm_YIELD();                                                                                    \
-        }                                                                                                     \
+        myptm_sem_t *__ptr = (p_sem);                                                                         \
+        __ptr->count = 0;                                                                                     \
     } while (0)
 
 #define myptm_DO                          \
@@ -215,7 +226,8 @@ int32_t myptm_thread_sys_tick_get_ms();
 void myptm_sem_init(myptm_sem_t *p_this, int init_count);
 myptm_err_t myptm_sem_prepare_take(myptm_sem_t *p_this, int delay_tick, myptm_thread_t *p_thread); /* delay_tick: 0 forevery */
 void myptm_sem_give(myptm_sem_t *p_this, int count);
-void myptm_sem_destroy(myptm_sem_t *p_this, int init_count);
+void myptm_sem_give_all(myptm_sem_t *p_this);
+void myptm_sem_destroy(myptm_sem_t *p_this);
 
 void myptm_thread_init(myptm_thread_t *p_thread, int (*entry)(myptm_thread_t *));
 void myptm_thread_startup(myptm_thread_t *p_thread);
@@ -225,16 +237,28 @@ void myptm_thread_resume(myptm_thread_t *p_thread, int code);
 void myptm_thread_join(myptm_thread_t *p_thread);
 
 void myptm_loop_init(myptm_loop_t *p_this);
-int myptm_loop_run(myptm_thread_t *p_thread);
+void myptm_loop_destroy(myptm_loop_t *p_this);
+int myptm_loop_empty( myptm_loop_t *p_this );
+int  myptm_loop_poll(myptm_loop_t *p_this);
 void myptm_loop_add(myptm_loop_t *p_this, myptm_thread_t *p_thread);
-void myptm_loop_timer_start(myptm_loop_t *p_this, myptm_timer_t *p_timer, int ms );
+void myptm_loop_timer_start(myptm_loop_t *p_this, myptm_timer_t *p_timer, int ms);
 void myptm_loop_timer_remove(myptm_loop_t *p_this, myptm_timer_t *p_timer);
 void myptm_loop_remove(myptm_loop_t *p_this, myptm_thread_t *p_thread);
 void myptm_loop_destroy(myptm_loop_t *p_this);
 int myptm_loop_next_tick(myptm_loop_t *p_this);
 
+#define myptm_condition_variable myptm_sem_t
+#define myptm_condition_variable_init(pthis) myptm_sem_init((pthis), 0)
+#define myptm_condition_variable_destroy(pthis) myptm_sem_destroy((pthis))
+#define myptm_condition_variable_wait(pthis) myptm_sem_take(pthis, -1)
+#define myptm_condition_variable_wait_for(pthis, ms) myptm_sem_take(pthis, ms)
+#define myptm_condition_variable_notify_one(pthis) myptm_sem_give(pthis, 1)
+#define myptm_condition_variable_notify_all(pthis) myptm_sem_give_all(pthis)
+
 #ifdef __cplusplus
 MYPTM_CPLUSPLUS_END
 #endif
+
+
 
 #endif
