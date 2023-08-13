@@ -28,16 +28,10 @@ target_include_directories(example4 PUBLIC include )
 target_compile_options(example4 PUBLIC -g -O0 )
 
 
-add_executable(simple_shell simple_shell.cpp ringbuffer.c)
-target_include_directories(simple_shell PUBLIC include )
-target_compile_options(simple_shell PUBLIC -g -O0 )
-target_compile_definitions(simple_shell PUBLIC USING_DEMO=1 )
-
 if(${CMAKE_COMPILER_IS_GNUCXX})
 target_link_libraries(example1 PUBLIC stdc++)
 target_link_libraries(example2 PUBLIC stdc++)
 target_link_libraries(example3 PUBLIC stdc++)
 target_link_libraries(example_driver PUBLIC stdc++)
 target_link_libraries(example4 PUBLIC stdc++)
-target_link_libraries(simple_shell PUBLIC stdc++)
 endif()
